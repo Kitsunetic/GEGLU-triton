@@ -173,5 +173,5 @@ def geglu(x: Tensor):
 
 
 class GEGLU(nn.Module):
-    def forward(x: Tensor):
+    def forward(self, x: Tensor):
         return geglu(x)

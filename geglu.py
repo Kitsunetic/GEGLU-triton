@@ -26,10 +26,8 @@ import math
 
 import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
 import triton
 import triton.language as tl
-from flash_attn import flash_attn_kvpacked_func, flash_attn_qkvpacked_func
 from torch import Tensor
 from torch.autograd.function import Function
 

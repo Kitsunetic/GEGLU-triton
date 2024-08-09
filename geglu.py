@@ -26,6 +26,7 @@ import math
 
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 import triton
 import triton.language as tl
 from torch import Tensor
@@ -61,7 +62,7 @@ def gelu_forward(x):
 
     .. _GeLU: https://arxiv.org/pdf/1606.08415.pdf
     """
-    return 0.5 * x * (1 + tanh(_kAlpha * (x + 0.044715 * x * x * x)))
+    return 0.5 * x * (1 + tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * x * x * x)))
 
 
 @triton.jit
@@ -75,9 +76,10 @@ def gelu_backward(x):
 
 @triton.jit
 def geglu_forward_kernel(x_ptr, y_ptr, N, C, C2, BLK_C: tl.constexpr, BLK_N: tl.constexpr):
-    pid = tl.program_id(0)
-    offs_n = pid * BLK_N + tl.arange(0, BLK_N)
-    offs_c = tl.arange(0, BLK_C)
+    pid_n = tl.program_id(0)
+    pid_c = tl.program_id(1)
+    offs_n = pid_n * BLK_N + tl.arange(0, BLK_N)
+    offs_c = pid_c * BLK_C + tl.arange(0, BLK_C)
     mask_n = offs_n < N
     mask_c = offs_c < C2
     mask = mask_n[:, None] & mask_c[None, :]
@@ -93,9 +95,10 @@ def geglu_forward_kernel(x_ptr, y_ptr, N, C, C2, BLK_C: tl.constexpr, BLK_N: tl.
 
 @triton.jit
 def geglu_backward_kernel(x_ptr, dx_ptr, dy_ptr, N, C, C2, BLK_C: tl.constexpr, BLK_N: tl.constexpr):
-    pid = tl.program_id(0)
-    offs_n = pid * BLK_N + tl.arange(0, BLK_N)
-    offs_c = tl.arange(0, BLK_C)
+    pid_n = tl.program_id(0)
+    pid_c = tl.program_id(1)
+    offs_n = pid_n * BLK_N + tl.arange(0, BLK_N)
+    offs_c = pid_c * BLK_C + tl.arange(0, BLK_C)
     mask_n = offs_n < N
     mask_c = offs_c < C2
     mask = mask_n[:, None] & mask_c[None, :]
@@ -131,8 +134,7 @@ class GEGLUFunction(Function):
 
         BLK_C = max(8, min(1024, triton.next_power_of_2(C2)))
         BLK_N = max(1, 1024 // BLK_C)
-        BLK_N = 1
-        grid = lambda meta: (triton.cdiv(N, meta["BLK_N"]),)
+        grid = lambda meta: (triton.cdiv(N, meta["BLK_N"]), triton.cdiv(C2, meta["BLK_C"]))
         geglu_forward_kernel[grid](x, y, N, C, C2, BLK_C=BLK_C, BLK_N=BLK_N)
 
         ctx.save_for_backward(x)
@@ -150,7 +152,7 @@ class GEGLUFunction(Function):
 
         BLK_C = max(8, min(1024, triton.next_power_of_2(C2)))
         BLK_N = max(1, 1024 // BLK_C)
-        grid = lambda meta: (triton.cdiv(N, meta["BLK_N"]),)
+        grid = lambda meta: (triton.cdiv(N, meta["BLK_N"]), triton.cdiv(C2, meta["BLK_C"]))
 
         geglu_backward_kernel[grid](x, dx, dy, N, C, C2, BLK_C=BLK_C, BLK_N=BLK_N)
         return dx

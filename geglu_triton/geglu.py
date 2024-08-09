@@ -62,14 +62,13 @@ def gelu_forward(x):
 
     .. _GeLU: https://arxiv.org/pdf/1606.08415.pdf
     """
-    return 0.5 * x * (1 + tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * x * x * x)))
+    return 0.5 * x * (1 + tanh(_kAlpha * x * (1 + 0.044715 * x * x)))
 
 
 @triton.jit
 def gelu_backward(x):
     x2 = x * x
-    x3 = x2 * x
-    tanh_ = tanh(_kAlpha * (x + 0.044715 * x3))
+    tanh_ = tanh(_kAlpha * x * (1 + 0.044715 * x2))
     dx = 0.5 * (x * (1 - tanh_ * tanh_) * (0.1070322244089 * x2 + 0.797884560802865) + tanh_ + 1)
     return dx
 
